@@ -1,0 +1,9 @@
+Added the ``getstate_setstate`` argument to ``@attr.s`` (and the Modern API ``@attrs.define`` / ``@attrs.frozen`` / ``@attrs.mutable``) that controls whether ``attrs`` generates ``__getstate__`` and ``__setstate__`` methods.
+
+Passing ``True`` generates both methods for slotted *and* regular classes.  The state contains exactly the ``attrs`` attributes (never the weak reference or a cached hash code, which gets reset to ``None`` on deserialization), and frozen classes restore their state via ``object.__setattr__``.
+
+Passing ``False`` leaves serialization entirely to user-defined methods or a base-class protocol -- ``attrs`` will no longer silently override them on slotted classes.
+
+Leaving it at ``None`` preserves the historical behavior: the methods are generated for slotted classes (and a class defining its own ``__getstate__``/``__setstate__`` together with ``auto_detect=True`` keeps them) and not for regular classes.
+
+The generated methods are based on the runtime class' attributes, so classes in an inheritance hierarchy may choose different values without duplicating inherited fields or skipping fields added by child classes.

@@ -16,7 +16,7 @@ What follows is the API explanation, if you'd like a more hands-on introduction,
 Core
 ----
 
-.. autofunction:: attr.s(these=None, repr_ns=None, repr=None, cmp=None, hash=None, init=None, slots=False, frozen=False, weakref_slot=True, str=False, auto_attribs=False, kw_only=False, cache_hash=False, auto_exc=False, eq=None, order=None, auto_detect=False, collect_by_mro=False)
+.. autofunction:: attr.s(these=None, repr_ns=None, repr=None, cmp=None, hash=None, init=None, slots=False, frozen=False, weakref_slot=True, str=False, auto_attribs=False, kw_only=False, cache_hash=False, auto_exc=False, eq=None, order=None, auto_detect=False, collect_by_mro=False, getstate_setstate=None)
 
    .. note::
 
@@ -103,6 +103,30 @@ Core
       ...     x = attr.ib()
       >>> attr.fields(C).x
       Attribute(name='x', default=NOTHING, validator=None, repr=True, eq=True, order=True, hash=None, init=True, metadata=mappingproxy({}), type=None, converter=None, kw_only=False, inherited=False)
+
+
+Modern API
+----------
+
+.. currentmodule:: attrs
+
+The Modern API is a small, opinionated layer on top of the classic API:
+classes are written with :pep:`526` type annotations only, base-class
+attributes are collected correctly (``collect_by_mro=True``), manually
+implemented dunder methods are detected automatically (``auto_detect=True``)
+and instances are weak-referenceable by default.
+
+.. autofunction:: attrs.define(these=None, repr_ns=None, repr=None, hash=None, init=None, slots=False, frozen=False, weakref_slot=True, str=False, kw_only=False, cache_hash=False, auto_exc=False, eq=None, order=None, getstate_setstate=None)
+
+   `attrs.mutable` is an alias for `attrs.define`.
+
+.. autofunction:: attrs.frozen(these=None, repr_ns=None, repr=None, hash=None, init=None, weakref_slot=True, str=False, kw_only=False, cache_hash=False, auto_exc=False, eq=None, order=None, getstate_setstate=None)
+
+.. autofunction:: attrs.field
+
+.. autofunction:: attrs.make_class
+
+.. currentmodule:: attr
 
 
 .. autofunction:: attr.make_class

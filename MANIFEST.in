@@ -3,6 +3,7 @@ graft .github
 
 # Stubs
 include src/attr/py.typed
+include src/attrs/py.typed
 recursive-include src *.pyi
 
 # Tests

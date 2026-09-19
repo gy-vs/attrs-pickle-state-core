@@ -518,6 +518,93 @@ def _frozen_delattrs(self, name):
     raise FrozenInstanceError()
 
 
+def _is_cache_hash_class(cls):
+    """
+    Check whether *cls* stores its (possibly cached) hash in a slot/dict entry.
+
+    The generated ``__hash__`` always closes over the cache wrapper when
+    ``cache_hash=True`` is in effect, so inspecting its defaults is a robust,
+    class-dict-independent way to detect it -- even for subclasses that merely
+    inherit a cached ``__hash__``.
+    """
+    meth = getattr(cls, "__hash__", None)
+    if meth is None:
+        return False
+
+    defaults = (getattr(meth, "__defaults__", None) or ()) + tuple(
+        (getattr(meth, "__kwdefaults__", None) or {}).values()
+    )
+    return _CacheHashWrapper in defaults
+
+
+def _getstate_attr_names(cls):
+    """
+    Names of *cls*' attrs attributes that must participate in the state tuple.
+
+    Computed from the runtime class instead of being baked into the methods
+    so that parent and child classes can independently choose whether they
+    want generated state methods without duplicating inherited fields or
+    skipping fields added by a child class.
+
+    An ``__weakref__`` attribute (it can be defined explicitly via
+    ``attr.ib(init=False)``) is excluded because it is never writable.
+    """
+    return tuple(
+        a.name for a in cls.__attrs_attrs__ if a.name != "__weakref__"
+    )
+
+
+def _make_getstate(cls):
+    """
+    Build an ``__getstate__`` that serializes all attrs fields as a tuple.
+    """
+
+    def __getstate__(self):
+        """
+        Automatically created by attrs.
+        """
+        return tuple(
+            getattr(self, name)
+            for name in _getstate_attr_names(self.__class__)
+        )
+
+    __getstate__.__module__ = cls.__module__
+
+    return __getstate__
+
+
+def _make_setstate(cls):
+    """
+    Build an ``__setstate__`` that restores all attrs fields.
+
+    ``object.__setattr__`` is always used (rather than regular ``setattr``),
+    so that frozen classes can be restored and so that a frozen base class
+    does not get in the way during multi-level inheritance round-trips.
+    """
+
+    def __setstate__(self, state):
+        """
+        Automatically created by attrs.
+        """
+        __bound_setattr = _obj_setattr.__get__(self, Attribute)
+        for name, value in zip(_getstate_attr_names(self.__class__), state):
+            __bound_setattr(name, value)
+
+        # The hash cache is never serialized.  If the class caches its hash,
+        # reset it to None so the first hash call after deserialization
+        # recomputes instead of reusing a stale value.  Use try/except because
+        # a non-cache-hash child of a cache-hash base has no slot for it.
+        if _is_cache_hash_class(self.__class__):
+            try:
+                __bound_setattr(_hash_cache_field, None)
+            except AttributeError:
+                pass
+
+    __setstate__.__module__ = cls.__module__
+
+    return __setstate__
+
+
 class _ClassBuilder(object):
     """
     Iteratively build *one* class.
@@ -537,6 +624,7 @@ class _ClassBuilder(object):
         "_delete_attribs",
         "_base_attr_map",
         "_is_exc",
+        "_getstate_setstate",
     )
 
     def __init__(
@@ -551,6 +639,8 @@ class _ClassBuilder(object):
         cache_hash,
         is_exc,
         collect_by_mro,
+        getstate_setstate=None,
+        auto_detect=False,
     ):
         attrs, base_attrs, base_map = _transform_attrs(
             cls, these, auto_attribs, kw_only, collect_by_mro,
@@ -569,6 +659,30 @@ class _ClassBuilder(object):
         self._has_post_init = bool(getattr(cls, "__attrs_post_init__", False))
         self._delete_attribs = not bool(these)
         self._is_exc = is_exc
+
+        if getstate_setstate is not True and getstate_setstate is not False:
+            if getstate_setstate is not None:
+                raise TypeError(
+                    "Invalid value for getstate_setstate.  Must be True, "
+                    "False, or None."
+                )
+            # Leaving the argument at None keeps the historical behavior:
+            # slots classes need generated __getstate__/__setstate__ because
+            # their state does not live in __dict__, while regular classes
+            # rely on pickle's default protocol (and a user-provided method
+            # wins when auto_detect is enabled).
+            if slots:
+                getstate_setstate = not (
+                    auto_detect
+                    and (
+                        _has_own_attribute(cls, "__getstate__")
+                        or _has_own_attribute(cls, "__setstate__")
+                    )
+                )
+            else:
+                getstate_setstate = False
+
+        self._getstate_setstate = getstate_setstate
 
         self._cls_dict["__attrs_attrs__"] = self._attrs
 
@@ -657,36 +771,12 @@ class _ClassBuilder(object):
         if qualname is not None:
             cd["__qualname__"] = qualname
 
-        # __weakref__ is not writable.
-        state_attr_names = tuple(
-            an for an in self._attr_names if an != "__weakref__"
-        )
-
-        def slots_getstate(self):
-            """
-            Automatically created by attrs.
-            """
-            return tuple(getattr(self, name) for name in state_attr_names)
-
-        hash_caching_enabled = self._cache_hash
-
-        def slots_setstate(self, state):
-            """
-            Automatically created by attrs.
-            """
-            __bound_setattr = _obj_setattr.__get__(self, Attribute)
-            for name, value in zip(state_attr_names, state):
-                __bound_setattr(name, value)
-
-            # The hash code cache is not included when the object is
-            # serialized, but it still needs to be initialized to None to
-            # indicate that the first call to __hash__ should be a cache miss.
-            if hash_caching_enabled:
-                __bound_setattr(_hash_cache_field, None)
-
-        # slots and frozen require __getstate__/__setstate__ to work
-        cd["__getstate__"] = slots_getstate
-        cd["__setstate__"] = slots_setstate
+        # slots and frozen require __getstate__/__setstate__ to work -- but
+        # only generate them if the user asked for them (or accepted the
+        # default, which generates them for slots classes).  Otherwise user-
+        # defined methods or base-class protocols must be left untouched.
+        if self._getstate_setstate:
+            self._add_state_methods(cd)
 
         # Create new class based on old class and our methods.
         cls = type(self._cls)(self._cls.__name__, self._cls.__bases__, cd)
@@ -766,6 +856,25 @@ class _ClassBuilder(object):
                 self._is_exc,
             )
         )
+
+        return self
+
+    def _add_state_methods(self, cd):
+        """
+        Put generated ``__getstate__``/``__setstate__`` into dict *cd*.
+        """
+        cd["__getstate__"] = self._add_method_dunders(
+            _make_getstate(self._cls)
+        )
+        cd["__setstate__"] = self._add_method_dunders(
+            _make_setstate(self._cls)
+        )
+
+    def add_getstate_setstate(self):
+        """
+        Generate ``__getstate__`` and ``__setstate__`` for non-slots classes.
+        """
+        self._add_state_methods(self._cls_dict)
 
         return self
 
@@ -893,6 +1002,7 @@ def attrs(
     order=None,
     auto_detect=False,
     collect_by_mro=False,
+    getstate_setstate=None,
 ):
     r"""
     A class decorator that adds `dunder
@@ -1059,6 +1169,27 @@ def attrs(
 
        See issue `#428 <https://github.com/python-attrs/attrs/issues/428>`_ for
        more details.
+    :param bool getstate_setstate: If ``True``, generate ``__getstate__`` and
+       ``__setstate__`` methods that serialize and restore *exactly* the
+       ``attrs`` attributes of the instance.  The weak reference (if any) is
+       never part of the state and a cached hash code is never serialized --
+       it is reset so that it gets recomputed after deserialization.  Frozen
+       classes restore their state through ``object.__setattr__``.
+
+       If ``False``, ``attrs`` does not generate these methods at all: methods
+       defined on the class itself or protocols inherited from a base class
+       take over completely.
+
+       If left at ``None`` (the default), the historical behavior is
+       preserved: the methods are generated for slotted classes (which cannot
+       rely on ``__dict__``-based pickling) and are *not* generated for regular
+       classes.  Together with *auto_detect*, a slotted class that defines
+       ``__getstate__`` or ``__setstate__`` itself also keeps its own methods.
+
+       Generated methods are always based on the runtime class' attributes, so
+       mixing parents and children with different values never duplicates
+       inherited fields or skips fields added by a child.
+    :type getstate_setstate: `bool` or `None`
 
     .. versionadded:: 16.0.0 *slots*
     .. versionadded:: 16.1.0 *frozen*
@@ -1086,6 +1217,7 @@ def attrs(
     .. versionadded:: 19.2.0 *eq* and *order*
     .. versionadded:: 20.1.0 *auto_detect*
     .. versionadded:: 20.1.0 *collect_by_mro*
+    .. versionadded:: 20.1.0 *getstate_setstate*
     """
     if auto_detect and PY2:
         raise PythonTooOldError(
@@ -1113,6 +1245,8 @@ def attrs(
             cache_hash,
             is_exc,
             collect_by_mro,
+            getstate_setstate,
+            auto_detect,
         )
         if _determine_whether_to_implement(
             cls, repr, auto_detect, ("__repr__",)
@@ -1176,6 +1310,11 @@ def attrs(
                     "Invalid value for cache_hash.  To use hash caching,"
                     " init must be True."
                 )
+
+        # Slotted classes have their state methods attached while being
+        # rebuilt; non-slots classes only get them when explicitly requested.
+        if not slots and builder._getstate_setstate:
+            builder.add_getstate_setstate()
 
         return builder.build_class()
 
