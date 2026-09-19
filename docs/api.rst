@@ -16,7 +16,7 @@ What follows is the API explanation, if you'd like a more hands-on introduction,
 Core
 ----
 
-.. autofunction:: attr.s(these=None, repr_ns=None, repr=None, cmp=None, hash=None, init=None, slots=False, frozen=False, weakref_slot=True, str=False, auto_attribs=False, kw_only=False, cache_hash=False, auto_exc=False, eq=None, order=None, auto_detect=False, collect_by_mro=False)
+.. autofunction:: attr.s(these=None, repr_ns=None, repr=None, cmp=None, hash=None, init=None, slots=False, frozen=False, weakref_slot=True, str=False, auto_attribs=False, kw_only=False, cache_hash=False, auto_exc=False, eq=None, order=None, auto_detect=False, collect_by_mro=False, getstate_setstate=None)
 
    .. note::
 
@@ -103,6 +103,32 @@ Core
       ...     x = attr.ib()
       >>> attr.fields(C).x
       Attribute(name='x', default=NOTHING, validator=None, repr=True, eq=True, order=True, hash=None, init=True, metadata=mappingproxy({}), type=None, converter=None, kw_only=False, inherited=False)
+
+
+Next-generation APIs
+~~~~~~~~~~~~~~~~~~~~
+
+.. note::
+
+   These APIs are provisional, Python 3-only, and keyword-only.
+   They are a preview of what will become the standalone ``attrs`` package.
+
+They are a superset of the classic APIs and call `attr.s` with different
+defaults: most notably *slots*, *auto_exc*, *auto_detect*, and
+*collect_by_mro* are all enabled by default.  Since *slots* defaults to
+``True``, ``__getstate__`` and ``__setstate__`` are therefore generated
+by default as well; pass ``getstate_setstate=False`` to take over
+yourself.
+
+.. autofunction:: attr.define
+
+   .. note::
+
+      ``attrs`` also comes with the aliases ``attr.mutable`` and
+      ``attr.frozen`` (the latter is equivalent to calling
+      ``attr.define(frozen=True)``).
+
+.. autofunction:: attr.field
 
 
 .. autofunction:: attr.make_class

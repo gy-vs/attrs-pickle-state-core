@@ -1,0 +1,13 @@
+Added ``getstate_setstate`` argument to ``@attr.s`` / ``attr.define``.
+
+If left unset (``None``), the historical behavior is preserved: ``__getstate__`` and ``__setstate__`` are generated for slotted classes (where they are required for pickling, especially frozen classes) but not for regular classes.
+
+Passing ``True`` forces the methods to be generated (also for non-slotted classes); passing ``False`` leaves the class untouched so that user-defined or inherited methods take over.
+The generated methods:
+
+- serialize *all* attrs fields of the final class (including inherited fields), never duplicating or skipping fields in multi-level inheritance,
+- never include ``__weakref__`` or the cached hash value,
+- restore state through ``object.__setattr__`` so frozen classes work, and
+- reset the ``cache_hash=True`` cache to ``None`` after deserialization instead of reusing a stale hash.
+
+This also adds the provisional, keyword-only, Python 3-only next-generation APIs ``attr.define``, ``attr.field``, ``attr.mutable``, and ``attr.frozen``.

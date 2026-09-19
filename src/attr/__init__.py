@@ -18,6 +18,12 @@ from ._make import (
 )
 from ._version_info import VersionInfo
 
+# _next_gen is Python 3-only.
+try:
+    from ._next_gen import define, field, frozen, mutable
+except SyntaxError:  # pragma: no cover
+    pass
+
 
 __version__ = "20.1.0.dev0"
 __version_info__ = VersionInfo._from_version_string(__version__)
@@ -52,15 +58,19 @@ __all__ = [
     "attributes",
     "attrs",
     "converters",
+    "define",
     "evolve",
     "exceptions",
+    "field",
     "fields",
     "fields_dict",
     "filters",
+    "frozen",
     "get_run_validators",
     "has",
     "ib",
     "make_class",
+    "mutable",
     "s",
     "set_run_validators",
     "validate",

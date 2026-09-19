@@ -1425,7 +1425,7 @@ class TestClassBuilder(object):
             pass
 
         b = _ClassBuilder(
-            C, None, True, True, False, False, False, False, False, True
+            C, None, True, True, False, True, False, False, False, False, True
         )
 
         assert "<_ClassBuilder(cls=C)>" == repr(b)
@@ -1439,7 +1439,7 @@ class TestClassBuilder(object):
             x = attr.ib()
 
         b = _ClassBuilder(
-            C, None, True, True, False, False, False, False, False, True
+            C, None, True, True, False, True, False, False, False, False, True
         )
 
         cls = (
@@ -1510,6 +1510,7 @@ class TestClassBuilder(object):
             slots=False,
             frozen=False,
             weakref_slot=True,
+            getstate_setstate=False,
             auto_attribs=False,
             is_exc=False,
             kw_only=False,
